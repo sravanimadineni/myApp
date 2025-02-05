@@ -1,0 +1,20 @@
+# Ignore MySQL socket files
+mysql-data/mysql.sock
+mysql-data/*.err
+mysql-data/*.index
+mysql-data/*.cnf
+mysql-data/*.log
+
+# Ignore Maven target folder
+target/
+**/target/
+
+# Ignore Node.js dependencies (if any)
+node_modules/
+
+# Ignore IDE settings
+.idea/
+
+# Ignore Docker build artifacts
+docker/
+docker-compose.yml
