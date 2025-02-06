@@ -27,20 +27,20 @@ pipeline {
         stage('Docker Build & Push to AWS ECR') {
             steps {
                 script {
-                    // Login to AWS ECR
+                    // AWS ECR Login
                     bat """
-                    aws ecr get-login-password --region %AWS_REGION% > ecr-login.txt
-                    docker login --username AWS --password $(type ecr-login.txt) <AWS_ACCOUNT_ID>.dkr.ecr.%AWS_REGION%.amazonaws.com
+                    aws ecr get-login-password --region ${env.AWS_REGION} > ecr-login.txt
+                    docker login --username AWS --password $(type ecr-login.txt) <AWS_ACCOUNT_ID>.dkr.ecr.${env.AWS_REGION}.amazonaws.com
                     """
 
-                    // Build and tag image
+                    // Build and tag Docker image
                     bat """
-                    docker build -t %IMAGE_NAME% user-service/.
-                    docker tag %IMAGE_NAME%:latest <AWS_ACCOUNT_ID>.dkr.ecr.%AWS_REGION%.amazonaws.com/%ECR_REPO%:latest
+                    docker build -t ${env.IMAGE_NAME} user-service/.
+                    docker tag ${env.IMAGE_NAME}:latest <AWS_ACCOUNT_ID>.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}:latest
                     """
 
-                    // Push to ECR
-                    bat "docker push <AWS_ACCOUNT_ID>.dkr.ecr.%AWS_REGION%.amazonaws.com/%ECR_REPO%:latest"
+                    // Push Docker image to AWS ECR
+                    bat "docker push <AWS_ACCOUNT_ID>.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}:latest"
                 }
             }
         }
@@ -49,11 +49,4 @@ pipeline {
             steps {
                 script {
                     bat """
-                    echo y | pscp -i jenkins-ssh-key.pem deploy_script.bat ec2-user@<EC2_INSTANCE_IP>:
-                    psexec \\<EC2_INSTANCE_IP> -i jenkins-ssh-key.pem -u ec2-user cmd /c deploy_script.bat
-                    """
-                }
-            }
-        }
-    }
-}
+          
