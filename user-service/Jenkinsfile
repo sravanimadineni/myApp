@@ -1,0 +1,58 @@
+pipeline {
+    agent any
+
+    environment {
+        SERVICE_NAME = 'user-service'
+        AWS_REGION = 'us-east-1'  // Change to your AWS region
+        ECR_REPO = 'myapp-ecr-repo'
+        IMAGE_NAME = 'myapp-user-service'
+        CONTAINER_PORT = '8081'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/sravanimadineni/myApp.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir('user-service') {
+                    sh 'mvn clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('Docker Build & Push to AWS ECR') {
+            steps {
+                script {
+                    // Login to AWS ECR
+                    sh 'aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com'
+                    
+                    // Build and tag image
+                    sh 'docker build -t $IMAGE_NAME user-service/.'
+                    sh 'docker tag $IMAGE_NAME:latest <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest'
+
+                    // Push to ECR
+                    sh 'docker push <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest'
+                }
+            }
+        }
+
+        stage('Deploy to AWS EC2') {
+            steps {
+                sshagent(['jenkins-ssh-key']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ec2-user@<EC2_INSTANCE_IP> <<EOF
+                        docker pull <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
+                        docker stop $IMAGE_NAME || true
+                        docker rm $IMAGE_NAME || true
+                        docker run -d -p $CONTAINER_PORT:8081 --name $IMAGE_NAME <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
+                    EOF
+                    """
+                }
+            }
+        }
+    }
+}
