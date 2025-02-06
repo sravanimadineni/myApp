@@ -19,7 +19,7 @@ pipeline {
         stage('Build') {
             steps {
                 dir('user-service') {
-                    sh 'mvn clean package -DskipTests'
+                    bat 'mvn clean package -DskipTests'
                 }
             }
         }
@@ -28,28 +28,29 @@ pipeline {
             steps {
                 script {
                     // Login to AWS ECR
-                    sh 'aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com'
-                    
+                    bat """
+                    aws ecr get-login-password --region %AWS_REGION% > ecr-login.txt
+                    docker login --username AWS --password $(type ecr-login.txt) <AWS_ACCOUNT_ID>.dkr.ecr.%AWS_REGION%.amazonaws.com
+                    """
+
                     // Build and tag image
-                    sh 'docker build -t $IMAGE_NAME user-service/.'
-                    sh 'docker tag $IMAGE_NAME:latest <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest'
+                    bat """
+                    docker build -t %IMAGE_NAME% user-service/.
+                    docker tag %IMAGE_NAME%:latest <AWS_ACCOUNT_ID>.dkr.ecr.%AWS_REGION%.amazonaws.com/%ECR_REPO%:latest
+                    """
 
                     // Push to ECR
-                    sh 'docker push <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest'
+                    bat "docker push <AWS_ACCOUNT_ID>.dkr.ecr.%AWS_REGION%.amazonaws.com/%ECR_REPO%:latest"
                 }
             }
         }
 
         stage('Deploy to AWS EC2') {
             steps {
-                sshagent(['jenkins-ssh-key']) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ec2-user@<EC2_INSTANCE_IP> <<EOF
-                        docker pull <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
-                        docker stop $IMAGE_NAME || true
-                        docker rm $IMAGE_NAME || true
-                        docker run -d -p $CONTAINER_PORT:8081 --name $IMAGE_NAME <AWS_ACCOUNT_ID>.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:latest
-                    EOF
+                script {
+                    bat """
+                    echo y | pscp -i jenkins-ssh-key.pem deploy_script.bat ec2-user@<EC2_INSTANCE_IP>:
+                    psexec \\<EC2_INSTANCE_IP> -i jenkins-ssh-key.pem -u ec2-user cmd /c deploy_script.bat
                     """
                 }
             }
