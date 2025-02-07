@@ -21,9 +21,11 @@ pipeline {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
                     script {
+                        // Construct the absolute path for the Terraform directory
                         def terraformDir = "${WORKSPACE}\\${TF_DIR}".replace('\\', '/')
-
-                        sh """
+                        
+                        // Run Terraform commands inside Docker
+                        bat """
                             docker run --rm -v ${terraformDir}:/workspace -w /workspace hashicorp/terraform:latest terraform init
                             docker run --rm -v ${terraformDir}:/workspace -w /workspace hashicorp/terraform:latest terraform apply -auto-approve
                         """
@@ -41,7 +43,7 @@ pipeline {
                     def awsAccountId = env.AWS_ACCOUNT_ID
 
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
-                        powershell """
+                        bat """
                             aws ecr get-login-password --region ${awsRegion} | docker login --username AWS --password-stdin ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com
                             docker build -t ${imageName} user-service/.
                             docker tag ${imageName}:latest ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
@@ -56,8 +58,8 @@ pipeline {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: 'EC2_SSH_CREDENTIALS', keyFileVariable: 'SSH_KEY')]) {
                     script {
-                        powershell """
-                            ssh -o StrictHostKeyChecking=no -i \${SSH_KEY} ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p ${CONTAINER_PORT}:${CONTAINER_PORT} --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
+                        bat """
+                            ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p ${CONTAINER_PORT}:${CONTAINER_PORT} --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
                         """
                     }
                 }
