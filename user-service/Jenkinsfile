@@ -7,7 +7,7 @@ pipeline {
         ECR_REPO = 'myapp-ecr-repo'
         IMAGE_NAME = 'myapp-user-service'
         CONTAINER_PORT = '8081'
-        TF_DIR = 'terraform/'  // Terraform directory
+        TF_DIR = 'terraform'  // Terraform directory (removed trailing `/`)
     }
 
     stages {
@@ -17,19 +17,14 @@ pipeline {
             }
         }
 
-        // 🛠️ Running Terraform inside Docker
+        // 🛠️ Running Terraform inside Docker with Correct Volume Mount
         stage('Terraform Init & Apply') {
-            agent {
-                docker {
-                    image 'hashicorp/terraform:latest'
-                }
-            }
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
-                    dir("${TF_DIR}") {
+                    script {
                         sh """
-                            terraform init
-                            terraform apply -auto-approve
+                            docker run --rm -v \${WORKSPACE}/${TF_DIR}:/workspace -w /workspace hashicorp/terraform:latest terraform init
+                            docker run --rm -v \${WORKSPACE}/${TF_DIR}:/workspace -w /workspace hashicorp/terraform:latest terraform apply -auto-approve
                         """
                     }
                 }
@@ -43,9 +38,9 @@ pipeline {
                     def ecrRepo = env.ECR_REPO
                     def imageName = env.IMAGE_NAME
                     def awsAccountId = env.AWS_ACCOUNT_ID
-                    
+
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
-                        bat """
+                        powershell """
                             aws ecr get-login-password --region ${awsRegion} | docker login --username AWS --password-stdin ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com
                             docker build -t ${imageName} user-service/.
                             docker tag ${imageName}:latest ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
@@ -58,10 +53,12 @@ pipeline {
 
         stage('Deploy to AWS EC2') {
             steps {
-                script {
-                    bat """
-                        ssh -o StrictHostKeyChecking=no ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p 8081:8081 --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
-                    """
+                withCredentials([sshUserPrivateKey(credentialsId: 'EC2_SSH_CREDENTIALS', keyFileVariable: 'SSH_KEY')]) {
+                    script {
+                        powershell """
+                            ssh -o StrictHostKeyChecking=no -i \${SSH_KEY} ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p ${CONTAINER_PORT}:${CONTAINER_PORT} --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
+                        """
+                    }
                 }
             }
         }
