@@ -1,7 +1,5 @@
 provider "aws" {
-  region     = "us-east-1"
-  access_key = var.AWS_ACCESS_KEY
-  secret_key = var.AWS_SECRET_KEY
+  region = "us-east-1"
 }
 
 # Create ECR Repository
@@ -13,6 +11,7 @@ resource "aws_ecr_repository" "myapp_repo" {
 resource "aws_security_group" "myapp_sg" {
   name        = "myapp-security-group"
   description = "Allow inbound traffic"
+  
   ingress {
     from_port   = 8081
     to_port     = 8081
