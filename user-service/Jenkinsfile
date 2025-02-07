@@ -2,24 +2,31 @@ pipeline {
     agent any
 
     environment {
-        SERVICE_NAME = 'user-service'
-        AWS_REGION = 'us-east-1'  // Change to your AWS region
+        AWS_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = '412381746142'  // Your AWS Account ID
         ECR_REPO = 'myapp-ecr-repo'
         IMAGE_NAME = 'myapp-user-service'
         CONTAINER_PORT = '8081'
+        TF_DIR = 'terraform/'  // Terraform directory
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 git branch: 'main', url: 'https://github.com/sravanimadineni/myApp.git'
             }
         }
 
-        stage('Build') {
+        stage('Terraform Init & Apply') {
             steps {
-                dir('user-service') {
-                    bat 'mvn clean package -DskipTests'
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY', variable: 'AWS_ACCESS_KEY'),
+                    string(credentialsId: 'AWS_SECRET_KEY', variable: 'AWS_SECRET_KEY')
+                ]) {
+                    dir("${TF_DIR}") {
+                        bat 'terraform init'
+                        bat 'terraform apply -auto-approve -var="AWS_ACCESS_KEY=${AWS_ACCESS_KEY}" -var="AWS_SECRET_KEY=${AWS_SECRET_KEY}"'
+                    }
                 }
             }
         }
@@ -30,22 +37,28 @@ pipeline {
                     def awsRegion = env.AWS_REGION
                     def ecrRepo = env.ECR_REPO
                     def imageName = env.IMAGE_NAME
-                    def awsAccountId = "<AWS_ACCOUNT_ID>"  // Replace with actual AWS Account ID
+                    def awsAccountId = env.AWS_ACCOUNT_ID
                     
-                    // AWS ECR Login
-                    bat """
-                    aws ecr get-login-password --region ${awsRegion} > ecr-login.txt
-                    docker login --username AWS --password @ecr-login.txt ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com
-                    """
+                    withCredentials([
+                        string(credentialsId: 'AWS_ACCESS_KEY', variable: 'AWS_ACCESS_KEY'),
+                        string(credentialsId: 'AWS_SECRET_KEY', variable: 'AWS_SECRET_KEY')
+                    ]) {
+                        bat """
+                        aws configure set aws_access_key_id ${AWS_ACCESS_KEY}
+                        aws configure set aws_secret_access_key ${AWS_SECRET_KEY}
+                        aws ecr get-login-password --region ${awsRegion} > ecr-login.txt
+                        docker login --username AWS --password @ecr-login.txt ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com
+                        """
 
-                    // Build and tag Docker image
-                    bat """
-                    docker build -t ${imageName} user-service/.
-                    docker tag ${imageName}:latest ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
-                    """
+                        // Build and tag Docker image
+                        bat """
+                        docker build -t ${imageName} user-service/.
+                        docker tag ${imageName}:latest ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
+                        """
 
-                    // Push Docker image to AWS ECR
-                    bat "docker push ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest"
+                        // Push Docker image to AWS ECR
+                        bat "docker push ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest"
+                    }
                 }
             }
         }
@@ -54,8 +67,7 @@ pipeline {
             steps {
                 script {
                     bat """
-                    echo y | pscp -i jenkins-ssh-key.pem deploy_script.bat ec2-user@<EC2_INSTANCE_IP>:
-                    psexec \\<EC2_INSTANCE_IP> -i jenkins-ssh-key.pem -u ec2-user cmd /c deploy_script.bat
+                    ssh -o StrictHostKeyChecking=no ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p 8081:8081 --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
                     """
                 }
             }
