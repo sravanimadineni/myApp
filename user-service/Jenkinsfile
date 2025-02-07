@@ -19,58 +19,6 @@ pipeline {
 
         stage('Terraform Init & Apply') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'AWS_ACCESS_KEY', variable: 'AWS_ACCESS_KEY'),
-                    string(credentialsId: 'AWS_SECRET_KEY', variable: 'AWS_SECRET_KEY')
-                ]) {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
                     dir("${TF_DIR}") {
-                        bat 'terraform init'
-                        bat 'terraform apply -auto-approve -var="AWS_ACCESS_KEY=${AWS_ACCESS_KEY}" -var="AWS_SECRET_KEY=${AWS_SECRET_KEY}"'
-                    }
-                }
-            }
-        }
-
-        stage('Docker Build & Push to AWS ECR') {
-            steps {
-                script {
-                    def awsRegion = env.AWS_REGION
-                    def ecrRepo = env.ECR_REPO
-                    def imageName = env.IMAGE_NAME
-                    def awsAccountId = env.AWS_ACCOUNT_ID
-                    
-                    withCredentials([
-                        string(credentialsId: 'AWS_ACCESS_KEY', variable: 'AWS_ACCESS_KEY'),
-                        string(credentialsId: 'AWS_SECRET_KEY', variable: 'AWS_SECRET_KEY')
-                    ]) {
-                        bat """
-                        aws configure set aws_access_key_id ${AWS_ACCESS_KEY}
-                        aws configure set aws_secret_access_key ${AWS_SECRET_KEY}
-                        aws ecr get-login-password --region ${awsRegion} > ecr-login.txt
-                        docker login --username AWS --password @ecr-login.txt ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com
-                        """
-
-                        // Build and tag Docker image
-                        bat """
-                        docker build -t ${imageName} user-service/.
-                        docker tag ${imageName}:latest ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
-                        """
-
-                        // Push Docker image to AWS ECR
-                        bat "docker push ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest"
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to AWS EC2') {
-            steps {
-                script {
-                    bat """
-                    ssh -o StrictHostKeyChecking=no ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p 8081:8081 --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
-                    """
-                }
-            }
-        }
-    }
-}
+                        bat 'terraform i
