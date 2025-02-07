@@ -3,11 +3,11 @@ pipeline {
 
     environment {
         AWS_REGION = 'us-east-1'
-        AWS_ACCOUNT_ID = '412381746142'  // Your AWS Account ID
+        AWS_ACCOUNT_ID = '412381746142'
         ECR_REPO = 'myapp-ecr-repo'
         IMAGE_NAME = 'myapp-user-service'
         CONTAINER_PORT = '8081'
-        TF_DIR = 'terraform'  // Terraform directory (removed trailing `/`)
+        TF_DIR = 'terraform'  // Ensure this is correct inside the repo
     }
 
     stages {
@@ -17,14 +17,15 @@ pipeline {
             }
         }
 
-        // 🛠️ Running Terraform inside Docker with Correct Volume Mount
         stage('Terraform Init & Apply') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
                     script {
+                        def terraformDir = "${WORKSPACE}\\${TF_DIR}".replace('\\', '/')
+
                         sh """
-                            docker run --rm -v \${WORKSPACE}/${TF_DIR}:/workspace -w /workspace hashicorp/terraform:latest terraform init
-                            docker run --rm -v \${WORKSPACE}/${TF_DIR}:/workspace -w /workspace hashicorp/terraform:latest terraform apply -auto-approve
+                            docker run --rm -v ${terraformDir}:/workspace -w /workspace hashicorp/terraform:latest terraform init
+                            docker run --rm -v ${terraformDir}:/workspace -w /workspace hashicorp/terraform:latest terraform apply -auto-approve
                         """
                     }
                 }
