@@ -21,4 +21,43 @@ pipeline {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
                     dir("${TF_DIR}") {
-                        bat 'terraform i
+                        bat '''
+                            terraform init
+                            terraform apply -auto-approve
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build & Push to AWS ECR') {
+            steps {
+                script {
+                    def awsRegion = env.AWS_REGION
+                    def ecrRepo = env.ECR_REPO
+                    def imageName = env.IMAGE_NAME
+                    def awsAccountId = env.AWS_ACCOUNT_ID
+                    
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS_CREDENTIALS']]) {
+                        bat """
+                            aws ecr get-login-password --region ${awsRegion} | docker login --username AWS --password-stdin ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com
+                            docker build -t ${imageName} user-service/.
+                            docker tag ${imageName}:latest ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
+                            docker push ${awsAccountId}.dkr.ecr.${awsRegion}.amazonaws.com/${ecrRepo}:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to AWS EC2') {
+            steps {
+                script {
+                    bat """
+                        ssh -o StrictHostKeyChecking=no ec2-user@<EC2_INSTANCE_IP> "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest && docker run -d -p 8081:8081 --name ${IMAGE_NAME} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest"
+                    """
+                }
+            }
+        }
+    }
+}
